@@ -8,6 +8,16 @@ use std::sync::LazyLock;
 
 static MESSAGE_FELT: LazyLock<Felt> =
     LazyLock::new(|| cairo_short_string_to_felt("StarkNet Message").unwrap());
+static EXTENDED_CHAIN_DOMAIN_FELT: LazyLock<Felt> =
+    LazyLock::new(|| cairo_short_string_to_felt("XC_DOMAIN").unwrap());
+static EXTENDED_CHAIN_ORDER_MESSAGE_FELT: LazyLock<Felt> =
+    LazyLock::new(|| cairo_short_string_to_felt("XC_ORDER").unwrap());
+static EXTENDED_CHAIN_CANCEL_MESSAGE_FELT: LazyLock<Felt> =
+    LazyLock::new(|| cairo_short_string_to_felt("XC_CANCEL").unwrap());
+static EXTENDED_CHAIN_LEVERAGE_MESSAGE_FELT: LazyLock<Felt> =
+    LazyLock::new(|| cairo_short_string_to_felt("XC_LEVERAGE").unwrap());
+static EXTENDED_CHAIN_CREATE_MESSAGE_FELT: LazyLock<Felt> =
+    LazyLock::new(|| cairo_short_string_to_felt("XC_CREATE").unwrap());
 
 pub trait Hashable {
     const SELECTOR: Felt;
@@ -53,6 +63,9 @@ impl Hashable for StarknetDomain {
 pub struct AssetId {
     pub value: Felt,
 }
+pub struct AccountId {
+    pub value: u64,
+}
 pub struct PositionId {
     pub value: u32,
 }
@@ -67,15 +80,43 @@ pub struct Timestamp {
 }
 
 pub struct Order {
-    pub position_id: PositionId,
+    pub account_id: AccountId,
+    pub nonce_channel: u8,
+    pub nonce: u64,
     pub base_asset_id: AssetId,
     pub base_amount: i64,
     pub quote_asset_id: AssetId,
     pub quote_amount: i64,
     pub fee_asset_id: AssetId,
     pub fee_amount: u64,
+    pub order_type: u8,
+    pub time_in_force: u8,
+    pub expire_ms: u64,
     pub expiration: Timestamp,
-    pub salt: Felt,
+    pub external_id: Felt,
+    pub post_only: u8,
+}
+
+pub struct CancelOrder {
+    pub account_id: AccountId,
+    pub nonce_channel: u8,
+    pub nonce: u64,
+    pub external_id: Felt,
+    pub order_height: u64,
+    pub order_index: u32,
+}
+
+pub struct SetMarketLeverage {
+    pub account_id: AccountId,
+    pub nonce_channel: u8,
+    pub nonce: u64,
+    pub market_id: u64,
+    pub leverage: u32,
+}
+
+pub struct CreateAccount {
+    pub nonce: u64,
+    pub pubkey: Felt,
 }
 
 pub struct LimitOrder {
@@ -124,23 +165,127 @@ impl Hashable for LimitOrder {
 impl OffChainMessage for LimitOrder {}
 
 impl Hashable for Order {
-    const SELECTOR: Felt = selector!("\"Order\"(\"position_id\":\"felt\",\"base_asset_id\":\"AssetId\",\"base_amount\":\"i64\",\"quote_asset_id\":\"AssetId\",\"quote_amount\":\"i64\",\"fee_asset_id\":\"AssetId\",\"fee_amount\":\"u64\",\"expiration\":\"Timestamp\",\"salt\":\"felt\")\"PositionId\"(\"value\":\"u32\")\"AssetId\"(\"value\":\"felt\")\"Timestamp\"(\"seconds\":\"u64\")");
+    const SELECTOR: Felt = selector!("\"Order\"(\"account_id\":\"AccountId\",\"nonce_channel\":\"u8\",\"nonce\":\"u64\",\"base_asset_id\":\"AssetId\",\"base_amount\":\"i64\",\"quote_asset_id\":\"AssetId\",\"quote_amount\":\"i64\",\"fee_asset_id\":\"AssetId\",\"fee_amount\":\"u64\",\"order_type\":\"u8\",\"time_in_force\":\"u8\",\"expire_ms\":\"u64\",\"expiration\":\"Timestamp\",\"external_id\":\"felt\",\"post_only\":\"u8\")\"AccountId\"(\"value\":\"u64\")\"AssetId\"(\"value\":\"felt\")\"Timestamp\"(\"seconds\":\"u64\")");
     fn hash(&self) -> Felt {
         let mut hasher = PoseidonHasher::new();
         hasher.update(Self::SELECTOR);
-        hasher.update(self.position_id.value.into());
+        hasher.update(self.account_id.value.into());
+        hasher.update(self.nonce_channel.into());
+        hasher.update(self.nonce.into());
         hasher.update(self.base_asset_id.value.into());
         hasher.update(self.base_amount.into());
         hasher.update(self.quote_asset_id.value.into());
         hasher.update(self.quote_amount.into());
         hasher.update(self.fee_asset_id.value.into());
         hasher.update(self.fee_amount.into());
+        hasher.update(self.order_type.into());
+        hasher.update(self.time_in_force.into());
+        hasher.update(self.expire_ms.into());
         hasher.update(self.expiration.seconds.into());
-        hasher.update(self.salt);
+        hasher.update(self.external_id);
+        hasher.update(self.post_only.into());
         hasher.finalize()
     }
 }
 impl OffChainMessage for Order {}
+
+impl Hashable for CancelOrder {
+    const SELECTOR: Felt = selector!("\"CancelOrder\"(\"account_id\":\"AccountId\",\"nonce_channel\":\"u8\",\"nonce\":\"u64\",\"external_id\":\"felt\",\"order_height\":\"u64\",\"order_index\":\"u32\")\"AccountId\"(\"value\":\"u64\")");
+    fn hash(&self) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(Self::SELECTOR);
+        hasher.update(self.account_id.value.into());
+        hasher.update(self.nonce_channel.into());
+        hasher.update(self.nonce.into());
+        hasher.update(self.external_id);
+        hasher.update(self.order_height.into());
+        hasher.update(self.order_index.into());
+        hasher.finalize()
+    }
+}
+
+impl Hashable for SetMarketLeverage {
+    const SELECTOR: Felt = selector!("\"SetMarketLeverage\"(\"account_id\":\"AccountId\",\"nonce_channel\":\"u8\",\"nonce\":\"u64\",\"market_id\":\"u64\",\"leverage\":\"u32\")\"AccountId\"(\"value\":\"u64\")");
+    fn hash(&self) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(Self::SELECTOR);
+        hasher.update(self.account_id.value.into());
+        hasher.update(self.nonce_channel.into());
+        hasher.update(self.nonce.into());
+        hasher.update(self.market_id.into());
+        hasher.update(self.leverage.into());
+        hasher.finalize()
+    }
+}
+
+impl Hashable for CreateAccount {
+    const SELECTOR: Felt =
+        selector!("\"CreateAccount\"(\"nonce\":\"u64\",\"pubkey\":\"felt\")");
+    fn hash(&self) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(Self::SELECTOR);
+        hasher.update(self.nonce.into());
+        hasher.update(self.pubkey);
+        hasher.finalize()
+    }
+}
+
+fn split_u256_be(bytes: &[u8; 32]) -> (u128, u128) {
+    let mut hi = [0u8; 16];
+    hi.copy_from_slice(&bytes[..16]);
+    let mut lo = [0u8; 16];
+    lo.copy_from_slice(&bytes[16..]);
+    (u128::from_be_bytes(hi), u128::from_be_bytes(lo))
+}
+
+pub fn hash_extended_chain_domain(chain_domain: &[u8; 32]) -> Felt {
+    let (hi, lo) = split_u256_be(chain_domain);
+    let mut hasher = PoseidonHasher::new();
+    hasher.update(*EXTENDED_CHAIN_DOMAIN_FELT);
+    hasher.update(hi.into());
+    hasher.update(lo.into());
+    hasher.finalize()
+}
+
+impl Order {
+    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(*EXTENDED_CHAIN_ORDER_MESSAGE_FELT);
+        hasher.update(hash_extended_chain_domain(chain_domain));
+        hasher.update(self.hash());
+        hasher.finalize()
+    }
+}
+
+impl CancelOrder {
+    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(*EXTENDED_CHAIN_CANCEL_MESSAGE_FELT);
+        hasher.update(hash_extended_chain_domain(chain_domain));
+        hasher.update(self.hash());
+        hasher.finalize()
+    }
+}
+
+impl SetMarketLeverage {
+    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(*EXTENDED_CHAIN_LEVERAGE_MESSAGE_FELT);
+        hasher.update(hash_extended_chain_domain(chain_domain));
+        hasher.update(self.hash());
+        hasher.finalize()
+    }
+}
+
+impl CreateAccount {
+    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(*EXTENDED_CHAIN_CREATE_MESSAGE_FELT);
+        hasher.update(hash_extended_chain_domain(chain_domain));
+        hasher.update(self.hash());
+        hasher.finalize()
+    }
+}
 
 pub struct TransferArgs {
     pub recipient: PositionId,
@@ -234,7 +379,7 @@ mod tests {
     #[test]
     fn test_order_selector() {
         let expected = Felt::from_hex_unchecked(
-            "0x36da8d51815527cabfaa9c982f564c80fa7429616739306036f1f9b608dd112",
+            "0x2b4ba53d8bef33971c375421494fa598b7130ab750baa784dc570a667ea9b96",
         );
         let actual = Order::SELECTOR;
         assert_eq!(expected, actual);
@@ -300,26 +445,32 @@ mod tests {
     #[test]
     fn test_order_hashing() {
         let order = Order {
-            position_id: PositionId { value: 1 },
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
             base_asset_id: AssetId {
-                value: Felt::from_dec_str("2").unwrap(),
-            },
-            base_amount: 3,
-            quote_asset_id: AssetId {
                 value: Felt::from_dec_str("4").unwrap(),
             },
-            quote_amount: 5,
-            fee_asset_id: AssetId {
+            base_amount: 5,
+            quote_asset_id: AssetId {
                 value: Felt::from_dec_str("6").unwrap(),
             },
-            fee_amount: 7,
-            expiration: Timestamp { seconds: 8 },
-            salt: Felt::from_dec_str("9").unwrap(),
+            quote_amount: 7,
+            fee_asset_id: AssetId {
+                value: Felt::from_dec_str("8").unwrap(),
+            },
+            fee_amount: 9,
+            order_type: 0,
+            time_in_force: 2,
+            expire_ms: 10,
+            expiration: Timestamp { seconds: 11 },
+            external_id: Felt::from_dec_str("12").unwrap(),
+            post_only: 1,
         };
 
         let actual = order.hash();
-        let expected = Felt::from_dec_str(
-            "1329353150252109345267997901008558234696410103652961347079636617692652241760",
+        let expected = Felt::from_hex(
+            "0x6347c3aeb4691827d871497d1a0751db0a703d4b2d572b6539c2a3b328c43d1",
         )
         .unwrap();
         assert_eq!(actual, expected, "Hashes do not match for Order");
@@ -328,21 +479,27 @@ mod tests {
     #[test]
     fn test_message_hash_order() {
         let order = Order {
-            position_id: PositionId { value: 1 },
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
             base_asset_id: AssetId {
-                value: Felt::from_dec_str("2").unwrap(),
-            },
-            base_amount: 3,
-            quote_asset_id: AssetId {
                 value: Felt::from_dec_str("4").unwrap(),
             },
-            quote_amount: 5,
-            fee_asset_id: AssetId {
+            base_amount: 5,
+            quote_asset_id: AssetId {
                 value: Felt::from_dec_str("6").unwrap(),
             },
-            fee_amount: 7,
-            expiration: Timestamp { seconds: 8 },
-            salt: Felt::from_dec_str("9").unwrap(),
+            quote_amount: 7,
+            fee_asset_id: AssetId {
+                value: Felt::from_dec_str("8").unwrap(),
+            },
+            fee_amount: 9,
+            order_type: 0,
+            time_in_force: 2,
+            expire_ms: 10,
+            expiration: Timestamp { seconds: 11 },
+            external_id: Felt::from_dec_str("12").unwrap(),
+            post_only: 1,
         };
 
         let user_key = Felt::from_dec_str(
@@ -351,12 +508,179 @@ mod tests {
         .unwrap();
 
         let hash = order.message_hash(&SEPOLIA_DOMAIN, user_key).unwrap();
-        let expected_hash = Felt::from_dec_str(
-            "2788960362996410178586013462192086205585543858281504820767681025777602529597",
+        let expected_hash = Felt::from_hex(
+            "0x797098c0fa2dd0099012f61b5b187b670bb525a385780146c2dda7b95b75187",
         )
         .unwrap();
         println!("{}", expected_hash.to_hex_string());
         assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_extended_chain_message_hash_order() {
+        let order = Order {
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
+            base_asset_id: AssetId {
+                value: Felt::from_dec_str("4").unwrap(),
+            },
+            base_amount: 5,
+            quote_asset_id: AssetId {
+                value: Felt::from_dec_str("6").unwrap(),
+            },
+            quote_amount: 7,
+            fee_asset_id: AssetId {
+                value: Felt::from_dec_str("8").unwrap(),
+            },
+            fee_amount: 9,
+            order_type: 0,
+            time_in_force: 2,
+            expire_ms: 10,
+            expiration: Timestamp { seconds: 11 },
+            external_id: Felt::from_dec_str("12").unwrap(),
+            post_only: 1,
+        };
+
+        let actual = order.extended_chain_message_hash(&[0xAB; 32]);
+        let expected = Felt::from_hex(
+            "0x53c01d737a692c720de07cb58226c46fb4a923923a781efa430481a8d6bff90",
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_cancel_order_selector() {
+        let expected = Felt::from_hex_unchecked(
+            "0x283fc2e63c8532d83f52a98dab59b2fa49aa5da4d727e9066b3b9b9e25e94c8",
+        );
+        let actual = CancelOrder::SELECTOR;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_cancel_order_hashing() {
+        let cancel = CancelOrder {
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
+            external_id: Felt::from_dec_str("4").unwrap(),
+            order_height: 5,
+            order_index: 6,
+        };
+
+        let actual = cancel.hash();
+        let expected = Felt::from_hex(
+            "0x1a068e15b5f3d74d5c74497d6abab4fa743f043559b98f0b72ef50f13ae4f87",
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "Hashes do not match for CancelOrder");
+    }
+
+    #[test]
+    fn test_extended_chain_message_hash_cancel_order() {
+        let cancel = CancelOrder {
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
+            external_id: Felt::from_dec_str("4").unwrap(),
+            order_height: 5,
+            order_index: 6,
+        };
+
+        let actual = cancel.extended_chain_message_hash(&[0xAB; 32]);
+        let expected = Felt::from_hex(
+            "0x53bc749a7732cd01f2d2db888d11e48f10e3f18f6ecad1ba7dd336d092696f0",
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_set_market_leverage_selector() {
+        let expected = Felt::from_hex(
+            "0x1653fa9cb360f32c1bedee7f42356fbc3d49edb672d50788b997e8b71f245aa",
+        )
+        .unwrap();
+        let actual = SetMarketLeverage::SELECTOR;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_set_market_leverage_hashing() {
+        let leverage = SetMarketLeverage {
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
+            market_id: 4,
+            leverage: 5,
+        };
+
+        let actual = leverage.hash();
+        let expected = Felt::from_hex(
+            "0x7b2055a0e761f8b867f6d35ac6ad429d1fb7bcba92fd09636eba8ba74ea625f",
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "Hashes do not match for SetMarketLeverage");
+    }
+
+    #[test]
+    fn test_extended_chain_message_hash_set_market_leverage() {
+        let leverage = SetMarketLeverage {
+            account_id: AccountId { value: 1 },
+            nonce_channel: 2,
+            nonce: 3,
+            market_id: 4,
+            leverage: 5,
+        };
+
+        let actual = leverage.extended_chain_message_hash(&[0xAB; 32]);
+        let expected = Felt::from_hex(
+            "0x1e504a815a2e3bd91972069de59348e99ebec7f6c11e1070a929cb6ff2382ef",
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_create_account_selector() {
+        let expected = Felt::from_hex(
+            "0x37f447105570862eed0258dec5bfd4c87b3461d3bd81ab2da0b3296c267bcd5",
+        )
+        .unwrap();
+        let actual = CreateAccount::SELECTOR;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_create_account_hashing() {
+        let create = CreateAccount {
+            nonce: 1,
+            pubkey: Felt::from(2u64),
+        };
+
+        let actual = create.hash();
+        let expected = Felt::from_hex(
+            "0x7fac07aa3cdcfa9520b7b5209eeb32700c83c8a24fa4e2e515ee50a920bb25",
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "Hashes do not match for CreateAccount");
+    }
+
+    #[test]
+    fn test_extended_chain_message_hash_create_account() {
+        let create = CreateAccount {
+            nonce: 1,
+            pubkey: Felt::from(2u64),
+        };
+
+        let actual = create.extended_chain_message_hash(&[0xAB; 32]);
+        let expected = Felt::from_hex(
+            "0x385f701c0f48349a4e720f678494cb31cc4cf55fd7b03e5705a01c5c89c3137",
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
     }
 
     #[test]
