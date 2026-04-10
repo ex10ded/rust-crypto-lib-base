@@ -144,6 +144,32 @@ pub fn public_key_from_private_key_bytes(private_key: &[u8; 32]) -> [u8; 32] {
     get_public_key(&felt_from_bytes(private_key)).to_bytes_be()
 }
 
+/// Recover the y-coordinate from a STARK curve public key x-coordinate.
+///
+/// Solves y² = x³ + αx + β (α = 1) and returns the canonical (lower) root,
+/// which matches the convention used by `starknet::core::crypto::ecdsa_verify`.
+pub fn recover_stark_pubkey_y(x: &[u8; 32]) -> Result<[u8; 32], String> {
+    use starknet_curve::curve_params::BETA;
+
+    let x_felt = Felt::from_bytes_be(x);
+    let y_squared = x_felt * x_felt * x_felt + x_felt + BETA;
+    let y = y_squared
+        .sqrt()
+        .ok_or_else(|| "x-coordinate is not on the STARK curve".to_string())?;
+    Ok(y.to_bytes_be())
+}
+
+/// Return the full (x, y) public key as 64 bytes from a private key.
+pub fn full_public_key_from_private_key_bytes(private_key: &[u8; 32]) -> [u8; 64] {
+    let x_bytes = public_key_from_private_key_bytes(private_key);
+    let y_bytes = recover_stark_pubkey_y(&x_bytes)
+        .expect("valid private key must produce a point on the curve");
+    let mut out = [0u8; 64];
+    out[..32].copy_from_slice(&x_bytes);
+    out[32..].copy_from_slice(&y_bytes);
+    out
+}
+
 pub fn compute_extended_chain_domain_hash_bytes(chain_domain: &[u8; 32]) -> [u8; 32] {
     crate::starknet_messages::hash_extended_chain_domain(chain_domain).to_bytes_be()
 }
