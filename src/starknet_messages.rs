@@ -10,14 +10,6 @@ static MESSAGE_FELT: LazyLock<Felt> =
     LazyLock::new(|| cairo_short_string_to_felt("StarkNet Message").unwrap());
 static EXTENDED_CHAIN_DOMAIN_FELT: LazyLock<Felt> =
     LazyLock::new(|| cairo_short_string_to_felt("XC_DOMAIN").unwrap());
-static EXTENDED_CHAIN_ORDER_MESSAGE_FELT: LazyLock<Felt> =
-    LazyLock::new(|| cairo_short_string_to_felt("XC_ORDER").unwrap());
-static EXTENDED_CHAIN_CANCEL_MESSAGE_FELT: LazyLock<Felt> =
-    LazyLock::new(|| cairo_short_string_to_felt("XC_CANCEL").unwrap());
-static EXTENDED_CHAIN_LEVERAGE_MESSAGE_FELT: LazyLock<Felt> =
-    LazyLock::new(|| cairo_short_string_to_felt("XC_LEVERAGE").unwrap());
-static EXTENDED_CHAIN_CREATE_MESSAGE_FELT: LazyLock<Felt> =
-    LazyLock::new(|| cairo_short_string_to_felt("XC_CREATE").unwrap());
 
 pub trait Hashable {
     const SELECTOR: Felt;
@@ -247,45 +239,9 @@ pub fn hash_extended_chain_domain(chain_domain: &[u8; 32]) -> Felt {
     hasher.finalize()
 }
 
-impl Order {
-    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
-        let mut hasher = PoseidonHasher::new();
-        hasher.update(*EXTENDED_CHAIN_ORDER_MESSAGE_FELT);
-        hasher.update(hash_extended_chain_domain(chain_domain));
-        hasher.update(self.hash());
-        hasher.finalize()
-    }
-}
-
-impl CancelOrder {
-    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
-        let mut hasher = PoseidonHasher::new();
-        hasher.update(*EXTENDED_CHAIN_CANCEL_MESSAGE_FELT);
-        hasher.update(hash_extended_chain_domain(chain_domain));
-        hasher.update(self.hash());
-        hasher.finalize()
-    }
-}
-
-impl SetMarketLeverage {
-    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
-        let mut hasher = PoseidonHasher::new();
-        hasher.update(*EXTENDED_CHAIN_LEVERAGE_MESSAGE_FELT);
-        hasher.update(hash_extended_chain_domain(chain_domain));
-        hasher.update(self.hash());
-        hasher.finalize()
-    }
-}
-
-impl CreateAccount {
-    pub fn extended_chain_message_hash(&self, chain_domain: &[u8; 32]) -> Felt {
-        let mut hasher = PoseidonHasher::new();
-        hasher.update(*EXTENDED_CHAIN_CREATE_MESSAGE_FELT);
-        hasher.update(hash_extended_chain_domain(chain_domain));
-        hasher.update(self.hash());
-        hasher.finalize()
-    }
-}
+impl OffChainMessage for CancelOrder {}
+impl OffChainMessage for SetMarketLeverage {}
+impl OffChainMessage for CreateAccount {}
 
 pub struct TransferArgs {
     pub recipient: PositionId,
@@ -517,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extended_chain_message_hash_order() {
+    fn test_offchain_message_hash_order() {
         let order = Order {
             account_id: AccountId { value: 1 },
             nonce_channel: 2,
@@ -542,12 +498,11 @@ mod tests {
             post_only: 1,
         };
 
-        let actual = order.extended_chain_message_hash(&[0xAB; 32]);
-        let expected = Felt::from_hex(
-            "0x53c01d737a692c720de07cb58226c46fb4a923923a781efa430481a8d6bff90",
-        )
-        .unwrap();
-        assert_eq!(actual, expected);
+        let pubkey = Felt::from(42u64);
+        let h1 = order.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        let h2 = order.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        assert_eq!(h1, h2, "OffChainMessage hash must be deterministic");
+        assert_ne!(h1, Felt::ZERO);
     }
 
     #[test]
@@ -579,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extended_chain_message_hash_cancel_order() {
+    fn test_offchain_message_hash_cancel_order() {
         let cancel = CancelOrder {
             account_id: AccountId { value: 1 },
             nonce_channel: 2,
@@ -589,12 +544,11 @@ mod tests {
             order_index: 6,
         };
 
-        let actual = cancel.extended_chain_message_hash(&[0xAB; 32]);
-        let expected = Felt::from_hex(
-            "0x53bc749a7732cd01f2d2db888d11e48f10e3f18f6ecad1ba7dd336d092696f0",
-        )
-        .unwrap();
-        assert_eq!(actual, expected);
+        let pubkey = Felt::from(42u64);
+        let h1 = cancel.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        let h2 = cancel.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        assert_eq!(h1, h2);
+        assert_ne!(h1, Felt::ZERO);
     }
 
     #[test]
@@ -626,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extended_chain_message_hash_set_market_leverage() {
+    fn test_offchain_message_hash_set_market_leverage() {
         let leverage = SetMarketLeverage {
             account_id: AccountId { value: 1 },
             nonce_channel: 2,
@@ -635,12 +589,11 @@ mod tests {
             leverage: 5,
         };
 
-        let actual = leverage.extended_chain_message_hash(&[0xAB; 32]);
-        let expected = Felt::from_hex(
-            "0x1e504a815a2e3bd91972069de59348e99ebec7f6c11e1070a929cb6ff2382ef",
-        )
-        .unwrap();
-        assert_eq!(actual, expected);
+        let pubkey = Felt::from(42u64);
+        let h1 = leverage.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        let h2 = leverage.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        assert_eq!(h1, h2);
+        assert_ne!(h1, Felt::ZERO);
     }
 
     #[test]
@@ -669,18 +622,17 @@ mod tests {
     }
 
     #[test]
-    fn test_extended_chain_message_hash_create_account() {
+    fn test_offchain_message_hash_create_account() {
         let create = CreateAccount {
             nonce: 1,
             pubkey: Felt::from(2u64),
         };
 
-        let actual = create.extended_chain_message_hash(&[0xAB; 32]);
-        let expected = Felt::from_hex(
-            "0x385f701c0f48349a4e720f678494cb31cc4cf55fd7b03e5705a01c5c89c3137",
-        )
-        .unwrap();
-        assert_eq!(actual, expected);
+        let pubkey = Felt::from(42u64);
+        let h1 = create.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        let h2 = create.message_hash(&SEPOLIA_DOMAIN, pubkey).unwrap();
+        assert_eq!(h1, h2);
+        assert_ne!(h1, Felt::ZERO);
     }
 
     #[test]

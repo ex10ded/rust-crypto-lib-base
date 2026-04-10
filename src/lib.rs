@@ -3,6 +3,7 @@ use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use starknet::core::crypto::{ecdsa_sign, ecdsa_verify, Signature};
 use starknet_crypto::get_public_key;
+pub use starknet;
 use starknet::core::types::Felt;
 use std::str::FromStr;
 
@@ -159,19 +160,77 @@ pub fn recover_stark_pubkey_y(x: &[u8; 32]) -> Result<[u8; 32], String> {
     Ok(y.to_bytes_be())
 }
 
+/// Validate that the point (x, y) lies on the STARK curve y² = x³ + x + β.
+pub fn validate_stark_pubkey(x: &[u8; 32], y: &[u8; 32]) -> Result<(), String> {
+    use starknet_curve::curve_params::BETA;
+
+    let x_felt = Felt::from_bytes_be(x);
+    let y_felt = Felt::from_bytes_be(y);
+    let lhs = y_felt * y_felt;
+    let rhs = x_felt * x_felt * x_felt + x_felt + BETA;
+    if lhs == rhs {
+        Ok(())
+    } else {
+        Err("point is not on the STARK curve".to_string())
+    }
+}
+
 /// Return the full (x, y) public key as 64 bytes from a private key.
+///
+/// Performs the actual EC scalar multiplication `priv * G` and returns
+/// both coordinates of the resulting point.  This gives the correct
+/// y-coordinate (not just the canonical sqrt root).
 pub fn full_public_key_from_private_key_bytes(private_key: &[u8; 32]) -> [u8; 64] {
-    let x_bytes = public_key_from_private_key_bytes(private_key);
-    let y_bytes = recover_stark_pubkey_y(&x_bytes)
-        .expect("valid private key must produce a point on the curve");
+    use starknet_curve::curve_params::GENERATOR;
+    use starknet_types_core::curve::ProjectivePoint;
+
+    let priv_felt = felt_from_bytes(private_key);
+    let proj = &ProjectivePoint::from_affine(GENERATOR.x(), GENERATOR.y()).unwrap() * priv_felt;
+    let affine = proj.to_affine().unwrap();
+
     let mut out = [0u8; 64];
-    out[..32].copy_from_slice(&x_bytes);
-    out[32..].copy_from_slice(&y_bytes);
+    out[..32].copy_from_slice(&affine.x().to_bytes_be());
+    out[32..].copy_from_slice(&affine.y().to_bytes_be());
     out
 }
 
 pub fn compute_extended_chain_domain_hash_bytes(chain_domain: &[u8; 32]) -> [u8; 32] {
     crate::starknet_messages::hash_extended_chain_domain(chain_domain).to_bytes_be()
+}
+
+/// Compute the StarkNet domain hash from structured domain parameters.
+/// Matches `StarknetDomain::hash()` from the OffChainMessage specification.
+pub fn compute_starknet_domain_hash(
+    name: &str,
+    version: &str,
+    chain_id: &str,
+    revision: u32,
+) -> [u8; 32] {
+    use crate::starknet_messages::{Hashable, StarknetDomain};
+    let domain = StarknetDomain {
+        name: name.to_string(),
+        version: version.to_string(),
+        chain_id: chain_id.to_string(),
+        revision,
+    };
+    domain.hash().to_bytes_be()
+}
+
+/// Compute the OffChainMessage signing hash.
+/// `final_hash = Poseidon("StarkNet Message", domain_hash, public_key, payload_hash)`
+pub fn compute_offchain_message_hash(
+    domain_hash: &[u8; 32],
+    public_key: &[u8; 32],
+    payload_hash: &[u8; 32],
+) -> [u8; 32] {
+    use starknet::core::utils::cairo_short_string_to_felt;
+    let message_felt = cairo_short_string_to_felt("StarkNet Message").unwrap();
+    let mut hasher = starknet_crypto::PoseidonHasher::new();
+    hasher.update(message_felt);
+    hasher.update(Felt::from_bytes_be(domain_hash));
+    hasher.update(Felt::from_bytes_be(public_key));
+    hasher.update(Felt::from_bytes_be(payload_hash));
+    hasher.finalize().to_bytes_be()
 }
 
 fn domain_hash_felt(domain_hash: &[u8; 32]) -> Felt {
