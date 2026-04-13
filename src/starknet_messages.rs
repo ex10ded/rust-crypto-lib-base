@@ -106,6 +106,32 @@ pub struct SetMarketLeverage {
     pub leverage: u32,
 }
 
+pub struct LiquidationRequest {
+    pub account_id: AccountId,
+    pub nonce_channel: u8,
+    pub nonce: u64,
+    pub target_account_id: AccountId,
+    pub external_id: Felt,
+}
+
+impl Hashable for LiquidationRequest {
+    const SELECTOR: Felt = selector!(
+        "\"LiquidationRequest\"(\"account_id\":\"AccountId\",\"nonce_channel\":\"u8\",\"nonce\":\"u64\",\"target_account_id\":\"AccountId\",\"external_id\":\"felt\")\"AccountId\"(\"value\":\"u64\")"
+    );
+    fn hash(&self) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(Self::SELECTOR);
+        hasher.update(self.account_id.value.into());
+        hasher.update(self.nonce_channel.into());
+        hasher.update(self.nonce.into());
+        hasher.update(self.target_account_id.value.into());
+        hasher.update(self.external_id);
+        hasher.finalize()
+    }
+}
+
+impl OffChainMessage for LiquidationRequest {}
+
 pub struct CreateAccount {
     pub nonce: u64,
     pub pubkey: Felt,
