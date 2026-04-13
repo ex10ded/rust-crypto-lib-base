@@ -210,6 +210,26 @@ impl Hashable for SetMarketLeverage {
     }
 }
 
+pub struct Noop {
+    pub account_id: AccountId,
+    pub nonce_channel: u8,
+    pub nonce: u64,
+}
+
+impl Hashable for Noop {
+    const SELECTOR: Felt = selector!("\"Noop\"(\"account_id\":\"AccountId\",\"nonce_channel\":\"u8\",\"nonce\":\"u64\")\"AccountId\"(\"value\":\"u64\")");
+    fn hash(&self) -> Felt {
+        let mut hasher = PoseidonHasher::new();
+        hasher.update(Self::SELECTOR);
+        hasher.update(self.account_id.value.into());
+        hasher.update(self.nonce_channel.into());
+        hasher.update(self.nonce.into());
+        hasher.finalize()
+    }
+}
+
+impl OffChainMessage for Noop {}
+
 impl Hashable for CreateAccount {
     const SELECTOR: Felt =
         selector!("\"CreateAccount\"(\"nonce\":\"u64\",\"pubkey\":\"felt\")");
